@@ -4,7 +4,7 @@ import numpy as np
 from pyfaidx import Fasta
 from keras.models import load_model
 import logging
-
+from sys import exit
 
 class Annotator:
 
@@ -95,36 +95,38 @@ def get_delta_scores(record, ann, dist_var, mask):
 
     cov = 2*dist_var+1
     wid = 10000+cov
-    delta_scores = []
+    scores = []
 
     try:
         record.chrom, record.pos, record.ref, len(record.alts)
     except TypeError:
         logging.warning('Skipping record (bad input): {}'.format(record))
-        return delta_scores
+        return scores
 
     (genes, strands, idxs) = ann.get_name_and_strand(record.chrom, record.pos)
     if len(idxs) == 0:
-        return delta_scores
+        return scores
 
     chrom = normalise_chrom(record.chrom, list(ann.ref_fasta.keys())[0])
     try:
         seq = ann.ref_fasta[chrom][record.pos-wid//2-1:record.pos+wid//2].seq
     except (IndexError, ValueError):
         logging.warning('Skipping record (fasta issue): {}'.format(record))
-        return delta_scores
+        return scores
 
     if seq[wid//2:wid//2+len(record.ref)].upper() != record.ref:
         logging.warning('Skipping record (ref issue): {}'.format(record))
-        return delta_scores
+        return scores
 
     if len(seq) != wid:
         logging.warning('Skipping record (near chromosome end): {}'.format(record))
-        return delta_scores
+        return scores
 
     if len(record.ref) > 2*dist_var:
         logging.warning('Skipping record (ref too long): {}'.format(record))
-        return delta_scores
+        return scores
+
+    genomic_coords = np.arange(record.pos-cov//2-1, record.pos+cov//2)
 
     for j in range(len(record.alts)):
         for i in range(len(idxs)):
@@ -192,25 +194,36 @@ def get_delta_scores(record, ann, dist_var, mask):
             mask_pd = np.logical_and((idx_pd-cov//2 == dist_ann[2]), mask)
             mask_nd = np.logical_and((idx_nd-cov//2 != dist_ann[2]), mask)
 
-            delta_scores.append("{}|{}|{:.2f}|{:.2f}|{:.2f}|{:.2f}|{}|{}|{}|{}|{:.2f}|{:.2f}|{:.2f}|{:.2f}|{:.2f}|{:.2f}|{:.2f}|{:.2f}".format(
-                                record.alts[j],
-                                genes[i],
-                                (y[1, idx_pa, 1]-y[0, idx_pa, 1])*(1-mask_pa),
-                                (y[0, idx_na, 1]-y[1, idx_na, 1])*(1-mask_na),
-                                (y[1, idx_pd, 2]-y[0, idx_pd, 2])*(1-mask_pd),
-                                (y[0, idx_nd, 2]-y[1, idx_nd, 2])*(1-mask_nd),
-                                idx_pa-cov//2,
-                                idx_na-cov//2,
-                                idx_pd-cov//2,
-                                idx_nd-cov//2,
-                                y[0, idx_pa, 1],
-                                y[1, idx_pa, 1],
-                                y[0, idx_na, 1],
-                                y[1, idx_na, 1],
-                                y[0, idx_pd, 2],
-                                y[1, idx_pd, 2],
-                                y[0, idx_nd, 2],
-                                y[1, idx_nd, 2]))
+            scores.append({
+                "ALT": record.alts[j],
+                "SYMBOL": genes[i],
+                "DS_AG": (y[1, idx_pa, 1]-y[0, idx_pa, 1])*(1-mask_pa),
+                "DS_AL": (y[0, idx_na, 1]-y[1, idx_na, 1])*(1-mask_na),
+                "DS_DG": (y[1, idx_pd, 2]-y[0, idx_pd, 2])*(1-mask_pd),
+                "DS_DL": (y[0, idx_nd, 2]-y[1, idx_nd, 2])*(1-mask_nd),
+                "DP_AG": idx_pa-cov//2,
+                "DP_AL": idx_na-cov//2,
+                "DP_DG": idx_pd-cov//2,
+                "DP_DL": idx_nd-cov//2,
+                "DS_AG_REF": y[0, idx_pa, 1],
+                "DS_AL_REF": y[0, idx_na, 1],
+                "DS_DG_REF": y[0, idx_pd, 2],
+                "DS_DL_REF": y[0, idx_nd, 2],
+                "DS_AG_ALT": y[1, idx_pa, 1],
+                "DS_AL_ALT": y[1, idx_na, 1],
+                "DS_DG_ALT": y[1, idx_pd, 2],
+                "DS_DL_ALT": y[1, idx_nd, 2],
+                "ALL_NON_ZERO_SCORES": {
+                    f"{chrom}:{genomic_coord}": {
+                        "RA": ref_acceptor_score,
+                        "AA": alt_acceptor_score,
+                        "RD": ref_donor_score,
+                        "AD": alt_donor_score,
+                    } for genomic_coord, ref_acceptor_score, alt_acceptor_score, ref_donor_score, alt_donor_score in zip(
+                        genomic_coords, y_ref[0, :, 1], y_alt[0, :, 1], y_ref[0, :, 2], y_alt[0, :, 2]
+                    ) if any(score >= 0.01 for score in (ref_acceptor_score, alt_acceptor_score, ref_donor_score, ref_acceptor_score))
+                },
+            })
 
-    return delta_scores
+    return scores
 
