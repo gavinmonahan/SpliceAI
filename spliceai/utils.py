@@ -194,6 +194,8 @@ def get_delta_scores(record, ann, dist_var, mask):
             mask_pd = np.logical_and((idx_pd-cov//2 == dist_ann[2]), mask)
             mask_nd = np.logical_and((idx_nd-cov//2 != dist_ann[2]), mask)
 
+            strand_aware_genomic_coords = genomic_coords[::-1] if strands[i] == "-" else genomic_coords
+
             scores.append({
                 "ALT": record.alts[j],
                 "SYMBOL": genes[i],
@@ -221,7 +223,7 @@ def get_delta_scores(record, ann, dist_var, mask):
                         "RD": float(ref_donor_score),
                         "AD": float(alt_donor_score),
                     } for genomic_coord, ref_acceptor_score, alt_acceptor_score, ref_donor_score, alt_donor_score in zip(
-                        genomic_coords, y_ref[0, :, 1], y_alt[0, :, 1], y_ref[0, :, 2], y_alt[0, :, 2]
+                        strand_aware_genomic_coords, y_ref[0, :, 1], y_alt[0, :, 1], y_ref[0, :, 2], y_alt[0, :, 2]
                     ) if any(score >= 0.01 for score in (ref_acceptor_score, alt_acceptor_score, ref_donor_score, ref_acceptor_score))
                 },
             })
