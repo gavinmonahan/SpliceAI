@@ -126,7 +126,7 @@ def get_delta_scores(record, ann, dist_var, mask):
         logging.warning('Skipping record (ref too long): {}'.format(record))
         return scores
 
-    genomic_coords = np.arange(record.pos-cov//2-1, record.pos+cov//2)
+    genomic_coords = np.arange(record.pos-cov//2, record.pos+cov//2 + 1)
 
     for j in range(len(record.alts)):
         for i in range(len(idxs)):
@@ -197,6 +197,7 @@ def get_delta_scores(record, ann, dist_var, mask):
             scores.append({
                 "ALT": record.alts[j],
                 "SYMBOL": genes[i],
+                "STRAND": strands[i],
                 "DS_AG": float((y[1, idx_pa, 1]-y[0, idx_pa, 1])*(1-mask_pa)),
                 "DS_AL": float((y[0, idx_na, 1]-y[1, idx_na, 1])*(1-mask_na)),
                 "DS_DG": float((y[1, idx_pd, 2]-y[0, idx_pd, 2])*(1-mask_pd)),
