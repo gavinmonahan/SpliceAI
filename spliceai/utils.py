@@ -216,8 +216,9 @@ def get_delta_scores(record, ann, dist_var, mask):
                 "DS_AL_ALT": float(y[1, idx_na, 1]),
                 "DS_DG_ALT": float(y[1, idx_pd, 2]),
                 "DS_DL_ALT": float(y[1, idx_nd, 2]),
-                "ALL_NON_ZERO_SCORES": {
-                    f"{chrom}:{genomic_coord}": {
+                "ALL_NON_ZERO_SCORES": [
+                    {
+                        "pos": int(genomic_coord),
                         "RA": float(ref_acceptor_score),
                         "AA": float(alt_acceptor_score),
                         "RD": float(ref_donor_score),
@@ -225,7 +226,7 @@ def get_delta_scores(record, ann, dist_var, mask):
                     } for genomic_coord, ref_acceptor_score, alt_acceptor_score, ref_donor_score, alt_donor_score in zip(
                         strand_aware_genomic_coords, y_ref[0, :, 1], y_alt[0, :, 1], y_ref[0, :, 2], y_alt[0, :, 2]
                     ) if any(score >= 0.01 for score in (ref_acceptor_score, alt_acceptor_score, ref_donor_score, ref_acceptor_score))
-                },
+                ],
             })
 
     return scores
