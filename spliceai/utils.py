@@ -196,9 +196,17 @@ def get_delta_scores(record, ann, dist_var, mask):
 
             strand_aware_genomic_coords = genomic_coords[::-1] if strands[i] == "-" else genomic_coords
 
+            if len(genomic_coords) != y_ref.shape[1]:
+                raise ValueError(f"SpliceAI internal error: len(genomic_coords) != y_ref.shape[1]: "
+                                 f"{len(genomic_coords)} != {y_ref.shape[1]}")
+
+            if len(genomic_coords) != y_alt.shape[1]:
+                raise ValueError(f"SpliceAI internal error: len(genomic_coords) != y_alt.shape[1]: "
+                                 f"{len(genomic_coords)} != {y_alt.shape[1]}")
+
             scores.append({
                 "ALT": record.alts[j],
-                "SYMBOL": genes[i],
+                "NAME": genes[i],
                 "STRAND": strands[i],
                 "DS_AG": float((y[1, idx_pa, 1]-y[0, idx_pa, 1])*(1-mask_pa)),
                 "DS_AL": float((y[0, idx_na, 1]-y[1, idx_na, 1])*(1-mask_na)),
@@ -223,9 +231,10 @@ def get_delta_scores(record, ann, dist_var, mask):
                         "AA": float(alt_acceptor_score),
                         "RD": float(ref_donor_score),
                         "AD": float(alt_donor_score),
-                    } for genomic_coord, ref_acceptor_score, alt_acceptor_score, ref_donor_score, alt_donor_score in zip(
-                        strand_aware_genomic_coords, y_ref[0, :, 1], y_alt[0, :, 1], y_ref[0, :, 2], y_alt[0, :, 2]
+                    } for i, (genomic_coord, ref_acceptor_score, alt_acceptor_score, ref_donor_score, alt_donor_score) in enumerate(zip(
+                        strand_aware_genomic_coords, y_ref[0, :, 1], y_alt[0, :, 1], y_ref[0, :, 2], y_alt[0, :, 2])
                     ) if any(score >= 0.01 for score in (ref_acceptor_score, alt_acceptor_score, ref_donor_score, ref_acceptor_score))
+                         or i in (idx_pa, idx_na, idx_pd, idx_nd)
                 ],
             })
 
