@@ -1,9 +1,7 @@
-import sys
 import argparse
 import logging
 import pysam
-from spliceai.utils import Annotator, get_delta_scores
-
+from spliceai.utils import Annotator, get_delta_scores, INFO_FIELD_KEYS
 
 try:
     from sys.stdin import buffer as std_in
@@ -62,7 +60,7 @@ def main():
                     ' acceptor loss reference score (DS_AL_REF), acceptor loss variant score (DS_AL_ALT), '
                     ' donor gain reference score (DS_DG_REF), donor gain variant score (DS_DG_ALT), '
                     ' donor loss reference score (DS_DL_REF), donor loss variant score (DS_DL_ALT).'
-                    'Format: ALLELE|SYMBOL|DS_AG|DS_AL|DS_DG|DS_DL|DP_AG|DP_AL|DP_DG|DP_DL|DS_AG_REF|DS_AG_ALT|DS_AL_REF|DS_AL_ALT|DS_DG_REF|DS_DG_ALT|DS_DL_REF|DS_DL_ALT">')
+                    f'Format: {"|".join(INFO_FIELD_KEYS)}">')
 
     try:
         output = pysam.VariantFile(args.O, mode='w', header=header)
@@ -75,7 +73,9 @@ def main():
     for record in vcf:
         scores = get_delta_scores(record, ann, args.D, args.M)
         if len(scores) > 0:
-            record.info['SpliceAI'] = scores
+            record.info['SpliceAI'] = [
+                '|'.join([f"{d[key]:0.2f}" if isinstance(d[key], float) else str(d[key]) for key in INFO_FIELD_KEYS]) for d in scores
+            ]
         output.write(record)
 
     vcf.close()

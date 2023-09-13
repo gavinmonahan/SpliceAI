@@ -6,6 +6,29 @@ from keras.models import load_model
 import logging
 from sys import exit
 
+INFO_FIELD_KEYS = [
+    'ALLELE',
+    'NAME',
+    'STRAND',
+    'DS_AG',
+    'DS_AL',
+    'DS_DG',
+    'DS_DL',
+    'DP_AG',
+    'DP_AL',
+    'DP_DG',
+    'DP_DL',
+    'DS_AG_REF',
+    'DS_AG_ALT',
+    'DS_AL_REF',
+    'DS_AL_ALT',
+    'DS_DG_REF',
+    'DS_DG_ALT',
+    'DS_DL_REF',
+    'DS_DL_ALT',
+]
+
+
 class Annotator:
 
     def __init__(self, ref_fasta, annotations):
@@ -91,6 +114,49 @@ def normalise_chrom(source, target):
     return source
 
 
+def get_delta_scores_for_transcript(x_ref, x_alt, ref_len, alt_len, strand, cov, ann):
+    del_len = max(ref_len-alt_len, 0)
+
+    x_ref = one_hot_encode(x_ref)[None, :]
+    x_alt = one_hot_encode(x_alt)[None, :]
+
+    if strand == '-':
+        x_ref = x_ref[:, ::-1, ::-1]
+        x_alt = x_alt[:, ::-1, ::-1]
+
+    y_ref = np.mean([ann.models[m].predict(x_ref) for m in range(5)], axis=0)
+    y_alt = np.mean([ann.models[m].predict(x_alt) for m in range(5)], axis=0)
+
+    if strand == '-':
+        y_ref = y_ref[:, ::-1]
+        y_alt = y_alt[:, ::-1]
+
+    if ref_len > 1 and alt_len == 1:
+        y_alt = np.concatenate([
+            y_alt[:, :cov//2+alt_len],
+            np.zeros((1, del_len, 3)),
+            y_alt[:, cov//2+alt_len:]],
+            axis=1)
+    elif ref_len == 1 and alt_len > 1:
+        y_alt = np.concatenate([
+            y_alt[:, :cov//2],
+            np.max(y_alt[:, cov//2:cov//2+alt_len], axis=1)[:, None, :],
+            y_alt[:, cov//2+alt_len:]],
+            axis=1)
+    #MNP handling
+    elif ref_len > 1 and alt_len > 1:
+        zblock = np.zeros((1,ref_len-1,3))
+        y_alt = np.concatenate([
+            y_alt[:, :cov//2],
+            np.max(y_alt[:, cov//2:cov//2+alt_len], axis=1)[:, None, :],
+            zblock,
+            y_alt[:, cov//2+alt_len:]],
+            axis=1)
+
+    return y_ref, y_alt
+
+
+
 def get_delta_scores(record, ann, dist_var, mask):
 
     cov = 2*dist_var+1
@@ -128,6 +194,11 @@ def get_delta_scores(record, ann, dist_var, mask):
 
     genomic_coords = np.arange(record.pos-cov//2, record.pos+cov//2 + 1)
 
+    # many of the transcripts in a gene can have the same tx start & stop positions, so their results can be cached
+    # since SpliceAI scores (prior to masking) depend only on transcript start & stop coordinates and strand.
+    delta_scores_transcript_cache = {}
+    model_prediction_count = 0
+    total_count = 0
     for j in range(len(record.alts)):
         for i in range(len(idxs)):
 
@@ -141,46 +212,18 @@ def get_delta_scores(record, ann, dist_var, mask):
             pad_size = [max(wid//2+dist_ann[0], 0), max(wid//2-dist_ann[1], 0)]
             ref_len = len(record.ref)
             alt_len = len(record.alts[j])
-            del_len = max(ref_len-alt_len, 0)
 
             x_ref = 'N'*pad_size[0]+seq[pad_size[0]:wid-pad_size[1]]+'N'*pad_size[1]
             x_alt = x_ref[:wid//2]+str(record.alts[j])+x_ref[wid//2+ref_len:]
 
-            x_ref = one_hot_encode(x_ref)[None, :]
-            x_alt = one_hot_encode(x_alt)[None, :]
+            total_count += 1
+            strand = strands[i]
+            args = (x_ref, x_alt, ref_len, alt_len, strand, cov)
+            if args not in delta_scores_transcript_cache:
+                model_prediction_count += 1
+            delta_scores_transcript_cache[args] = get_delta_scores_for_transcript(*args, ann=ann)
 
-            if strands[i] == '-':
-                x_ref = x_ref[:, ::-1, ::-1]
-                x_alt = x_alt[:, ::-1, ::-1]
-
-            y_ref = np.mean([ann.models[m].predict(x_ref) for m in range(5)], axis=0)
-            y_alt = np.mean([ann.models[m].predict(x_alt) for m in range(5)], axis=0)
-
-            if strands[i] == '-':
-                y_ref = y_ref[:, ::-1]
-                y_alt = y_alt[:, ::-1]
-
-            if ref_len > 1 and alt_len == 1:
-                y_alt = np.concatenate([
-                    y_alt[:, :cov//2+alt_len],
-                    np.zeros((1, del_len, 3)),
-                    y_alt[:, cov//2+alt_len:]],
-                    axis=1)
-            elif ref_len == 1 and alt_len > 1:
-                y_alt = np.concatenate([
-                    y_alt[:, :cov//2],
-                    np.max(y_alt[:, cov//2:cov//2+alt_len], axis=1)[:, None, :],
-                    y_alt[:, cov//2+alt_len:]],
-                    axis=1)
-            #MNP handling
-            elif ref_len > 1 and alt_len > 1:
-                zblock = np.zeros((1,ref_len-1,3))
-                y_alt = np.concatenate([
-                    y_alt[:, :cov//2],
-                    np.max(y_alt[:, cov//2:cov//2+alt_len], axis=1)[:, None, :],
-                    zblock,
-                    y_alt[:, cov//2+alt_len:]],
-                    axis=1)
+            y_ref, y_alt = delta_scores_transcript_cache[args]
 
             y = np.concatenate([y_ref, y_alt])
 
@@ -203,7 +246,7 @@ def get_delta_scores(record, ann, dist_var, mask):
                                  f"{len(genomic_coords)} != {y_alt.shape[1]}")
 
             scores.append({
-                "ALT": record.alts[j],
+                "ALLELE": record.alts[j],
                 "NAME": genes[i],
                 "STRAND": strands[i],
                 "DS_AG": float((y[1, idx_pa, 1]-y[0, idx_pa, 1])*(1-mask_pa)),
@@ -235,6 +278,8 @@ def get_delta_scores(record, ann, dist_var, mask):
                          or i in (idx_pa, idx_na, idx_pd, idx_nd)
                 ],
             })
+
+    #print(f"Done computing scores. Hit cache for {total_count - model_prediction_count:,d} out of {total_count:,d} transcripts")
 
     return scores
 
