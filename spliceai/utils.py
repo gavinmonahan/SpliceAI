@@ -28,7 +28,10 @@ INFO_FIELD_KEYS = [
     'DS_DL_ALT',
 ]
 
-DECIMAL_PLACES = 2
+FLOAT_FORMAT = "0.2f"
+
+# the minimum raw score for a position to be included in the ALL_NON_ZERO_SCORES array
+MIN_SCORE_THRESHOLD = 0.01
 
 
 class Annotator:
@@ -251,32 +254,32 @@ def get_delta_scores(record, ann, dist_var, mask):
                 "ALLELE": record.alts[j],
                 "NAME": genes[i],
                 "STRAND": strands[i],
-                "DS_AG": float(round((y[1, idx_pa, 1]-y[0, idx_pa, 1])*(1-mask_pa), DECIMAL_PLACES)),
-                "DS_AL": float(round((y[0, idx_na, 1]-y[1, idx_na, 1])*(1-mask_na), DECIMAL_PLACES)),
-                "DS_DG": float(round((y[1, idx_pd, 2]-y[0, idx_pd, 2])*(1-mask_pd), DECIMAL_PLACES)),
-                "DS_DL": float(round((y[0, idx_nd, 2]-y[1, idx_nd, 2])*(1-mask_nd), DECIMAL_PLACES)),
+                "DS_AG": f"{(y[1, idx_pa, 1]-y[0, idx_pa, 1])*(1-mask_pa):{FLOAT_FORMAT}}",
+                "DS_AL": f"{(y[0, idx_na, 1]-y[1, idx_na, 1])*(1-mask_na):{FLOAT_FORMAT}}",
+                "DS_DG": f"{(y[1, idx_pd, 2]-y[0, idx_pd, 2])*(1-mask_pd):{FLOAT_FORMAT}}",
+                "DS_DL": f"{(y[0, idx_nd, 2]-y[1, idx_nd, 2])*(1-mask_nd):{FLOAT_FORMAT}}",
                 "DP_AG": int(idx_pa-cov//2),
                 "DP_AL": int(idx_na-cov//2),
                 "DP_DG": int(idx_pd-cov//2),
                 "DP_DL": int(idx_nd-cov//2),
-                "DS_AG_REF": float(round(y[0, idx_pa, 1], DECIMAL_PLACES)),
-                "DS_AL_REF": float(round(y[0, idx_na, 1], DECIMAL_PLACES)),
-                "DS_DG_REF": float(round(y[0, idx_pd, 2], DECIMAL_PLACES)),
-                "DS_DL_REF": float(round(y[0, idx_nd, 2], DECIMAL_PLACES)),
-                "DS_AG_ALT": float(round(y[1, idx_pa, 1], DECIMAL_PLACES)),
-                "DS_AL_ALT": float(round(y[1, idx_na, 1], DECIMAL_PLACES)),
-                "DS_DG_ALT": float(round(y[1, idx_pd, 2], DECIMAL_PLACES)),
-                "DS_DL_ALT": float(round(y[1, idx_nd, 2], DECIMAL_PLACES)),
+                "DS_AG_REF": f"{y[0, idx_pa, 1]:{FLOAT_FORMAT}}",
+                "DS_AL_REF": f"{y[0, idx_na, 1]:{FLOAT_FORMAT}}",
+                "DS_DG_REF": f"{y[0, idx_pd, 2]:{FLOAT_FORMAT}}",
+                "DS_DL_REF": f"{y[0, idx_nd, 2]:{FLOAT_FORMAT}}",
+                "DS_AG_ALT": f"{y[1, idx_pa, 1]:{FLOAT_FORMAT}}",
+                "DS_AL_ALT": f"{y[1, idx_na, 1]:{FLOAT_FORMAT}}",
+                "DS_DG_ALT": f"{y[1, idx_pd, 2]:{FLOAT_FORMAT}}",
+                "DS_DL_ALT": f"{y[1, idx_nd, 2]:{FLOAT_FORMAT}}",
                 "ALL_NON_ZERO_SCORES": [
                     {
                         "pos": int(genomic_coord),
-                        "RA": float(round(ref_acceptor_score, DECIMAL_PLACES)),
-                        "AA": float(round(alt_acceptor_score, DECIMAL_PLACES)),
-                        "RD": float(round(ref_donor_score, DECIMAL_PLACES)),
-                        "AD": float(round(alt_donor_score, DECIMAL_PLACES)),
+                        "RA": f"{ref_acceptor_score:{FLOAT_FORMAT}}",
+                        "AA": f"{alt_acceptor_score:{FLOAT_FORMAT}}",
+                        "RD": f"{ref_donor_score:{FLOAT_FORMAT}}",
+                        "AD": f"{alt_donor_score:{FLOAT_FORMAT}}",
                     } for i, (genomic_coord, ref_acceptor_score, alt_acceptor_score, ref_donor_score, alt_donor_score) in enumerate(zip(
                         genomic_coords, y_ref[0, :, 1], y_alt[0, :, 1], y_ref[0, :, 2], y_alt[0, :, 2])
-                    ) if any(score >= 0.01 for score in (ref_acceptor_score, alt_acceptor_score, ref_donor_score, ref_acceptor_score))
+                    ) if any(score >= MIN_SCORE_THRESHOLD for score in (ref_acceptor_score, alt_acceptor_score, ref_donor_score, ref_acceptor_score))
                          or i in (idx_pa, idx_na, idx_pd, idx_nd)
                 ],
             })
