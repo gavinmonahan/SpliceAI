@@ -1,7 +1,7 @@
 from pkg_resources import resource_filename
 import pandas as pd
 import numpy as np
-from pyfaidx import Fasta
+from pyfastx import Fasta
 from keras.models import load_model
 import logging
 from sys import exit
@@ -62,7 +62,7 @@ class Annotator:
             exit()
 
         try:
-            self.ref_fasta = Fasta(ref_fasta, rebuild=False)
+            self.ref_fasta = Fasta(ref_fasta)
         except IOError as e:
             logging.error('{}'.format(e))
             exit()
