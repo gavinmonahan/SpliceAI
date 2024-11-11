@@ -33,6 +33,7 @@ FLOAT_FORMAT = "0.2f"
 # the minimum raw score for a position to be included in the ALL_NON_ZERO_SCORES array
 MIN_SCORE_THRESHOLD = 0.01
 
+INSERTED_BASES_CONTEXT = 5
 
 class Annotator:
 
@@ -148,6 +149,7 @@ def get_delta_scores_for_transcript(x_ref, x_alt, ref_len, alt_len, strand, cov,
             np.max(y_alt[:, cov//2:cov//2+alt_len], axis=1)[:, None, :],
             y_alt[:, cov//2+alt_len:]],
             axis=1)
+
     #MNP handling
     elif ref_len > 1 and alt_len > 1:
         zblock = np.zeros((1,ref_len-1,3))
@@ -160,6 +162,21 @@ def get_delta_scores_for_transcript(x_ref, x_alt, ref_len, alt_len, strand, cov,
 
     return y_ref, y_alt
 
+
+def compute_scores_for_inserted_bases(y_ref, y_alt, alt_len, cov):
+    # if the variant is an insertion, this array will contain the raw sores for the inserted bases.
+    # this is used for addressing https://github.com/broadinstitute/SpliceAI-lookup/issues/84
+    y_ref_inserted_bases = np.concatenate([
+        y_ref[:, 1 + cov//2 - INSERTED_BASES_CONTEXT : 1 + cov//2],
+        np.zeros((1, alt_len - 1, 3)),
+        y_ref[:, 1 + cov//2 : 1 + cov//2 + INSERTED_BASES_CONTEXT],
+    ], axis=1)
+
+    y_alt_inserted_bases = y_alt[:, 1 + cov//2 - INSERTED_BASES_CONTEXT: 1 + cov//2 + (alt_len - 1) + INSERTED_BASES_CONTEXT]
+
+    assert y_ref_inserted_bases.shape == y_alt_inserted_bases.shape
+
+    return y_ref_inserted_bases, y_alt_inserted_bases
 
 
 def get_delta_scores(record, ann, dist_var, mask):
@@ -197,7 +214,7 @@ def get_delta_scores(record, ann, dist_var, mask):
         logging.warning('Skipping record (ref too long): {}'.format(record))
         return scores
 
-    genomic_coords = np.arange(record.pos-cov//2, record.pos+cov//2 + 1)
+    genomic_coords = np.arange(record.pos - cov//2, record.pos + cov//2 + 1)
 
     # many of the transcripts in a gene can have the same tx start & stop positions, so their results can be cached
     # since SpliceAI scores (prior to masking) depend only on transcript start & stop coordinates and strand.
@@ -226,7 +243,7 @@ def get_delta_scores(record, ann, dist_var, mask):
             args = (x_ref, x_alt, ref_len, alt_len, strand, cov)
             if args not in delta_scores_transcript_cache:
                 model_prediction_count += 1
-            delta_scores_transcript_cache[args] = get_delta_scores_for_transcript(*args, ann=ann)
+                delta_scores_transcript_cache[args] = get_delta_scores_for_transcript(*args, ann=ann)
 
             y_ref, y_alt = delta_scores_transcript_cache[args]
 
@@ -250,18 +267,59 @@ def get_delta_scores(record, ann, dist_var, mask):
                 raise ValueError(f"SpliceAI internal error: len(genomic_coords) != y_alt.shape[1]: "
                                  f"{len(genomic_coords)} != {y_alt.shape[1]}")
 
+            DS_AG = (y[1, idx_pa, 1]-y[0, idx_pa, 1])*(1-mask_pa)
+            DS_AL = (y[0, idx_na, 1]-y[1, idx_na, 1])*(1-mask_na)
+            DS_DG = (y[1, idx_pd, 2]-y[0, idx_pd, 2])*(1-mask_pd)
+            DS_DL = (y[0, idx_nd, 2]-y[1, idx_nd, 2])*(1-mask_nd)
+
+            DP_AG =  int(idx_pa-cov//2)
+            DP_AL =  int(idx_na-cov//2)
+            DP_DG =  int(idx_pd-cov//2)
+            DP_DL =  int(idx_nd-cov//2)
+
+            if ref_len == 1 and alt_len >= 3 and (
+                (DS_AG >= 0.2 and DP_AG == 0) or
+                (DS_AL >= 0.2 and DP_AL == 0) or
+                (DS_DG >= 0.2 and DP_DG == 0) or
+                (DS_DL >= 0.2 and DP_DL == 0)):
+
+                inserted_bases_genomic_coords = np.concatenate([
+                    np.arange(record.pos - INSERTED_BASES_CONTEXT + 1, record.pos + 1),
+                    [f"+{offset}" for offset in np.arange(1, alt_len)],
+                    np.arange(record.pos + 1, record.pos + INSERTED_BASES_CONTEXT + 1),
+                ])
+
+                y_ref_inserted_bases, y_alt_inserted_bases = compute_scores_for_inserted_bases(
+                    y_ref, y_alt, alt_len, cov)
+
+                ref_seq = (
+                    seq[wid//2 - INSERTED_BASES_CONTEXT + 1: wid//2 + 1] +
+                    " " * (alt_len - 1) +
+                    seq[wid//2 + 1 : wid//2 + 1 + INSERTED_BASES_CONTEXT]
+                )
+                alt_seq = (
+                    seq[wid//2 - INSERTED_BASES_CONTEXT : wid//2] +
+                    record.alts[j][1:] +
+                    seq[wid//2 + len(record.ref) : wid//2 + len(record.ref) + INSERTED_BASES_CONTEXT]
+                )
+
+                assert len(ref_seq) == len(alt_seq), f"len(ref_seq) != len(alt_seq): {len(ref_seq)} != {len(alt_seq)}"
+
+            else:
+                inserted_bases_genomic_coords = ref_seq = alt_seq = y_ref_inserted_bases = y_alt_inserted_bases = None
+
             scores.append({
                 "ALLELE": record.alts[j],
                 "NAME": genes[i],
                 "STRAND": strands[i],
-                "DS_AG": f"{(y[1, idx_pa, 1]-y[0, idx_pa, 1])*(1-mask_pa):{FLOAT_FORMAT}}",
-                "DS_AL": f"{(y[0, idx_na, 1]-y[1, idx_na, 1])*(1-mask_na):{FLOAT_FORMAT}}",
-                "DS_DG": f"{(y[1, idx_pd, 2]-y[0, idx_pd, 2])*(1-mask_pd):{FLOAT_FORMAT}}",
-                "DS_DL": f"{(y[0, idx_nd, 2]-y[1, idx_nd, 2])*(1-mask_nd):{FLOAT_FORMAT}}",
-                "DP_AG": int(idx_pa-cov//2),
-                "DP_AL": int(idx_na-cov//2),
-                "DP_DG": int(idx_pd-cov//2),
-                "DP_DL": int(idx_nd-cov//2),
+                "DS_AG": f"{DS_AG:{FLOAT_FORMAT}}",
+                "DS_AL": f"{DS_AL:{FLOAT_FORMAT}}",
+                "DS_DG": f"{DS_DG:{FLOAT_FORMAT}}",
+                "DS_DL": f"{DS_DL:{FLOAT_FORMAT}}",
+                "DP_AG": DP_AG,
+                "DP_AL": DP_AL,
+                "DP_DG": DP_DG,
+                "DP_DL": DP_DL,
                 "DS_AG_REF": f"{y[0, idx_pa, 1]:{FLOAT_FORMAT}}",
                 "DS_AL_REF": f"{y[0, idx_na, 1]:{FLOAT_FORMAT}}",
                 "DS_DG_REF": f"{y[0, idx_pd, 2]:{FLOAT_FORMAT}}",
@@ -282,9 +340,20 @@ def get_delta_scores(record, ann, dist_var, mask):
                     ) if any(score >= MIN_SCORE_THRESHOLD for score in (ref_acceptor_score, alt_acceptor_score, ref_donor_score, ref_acceptor_score))
                          or i in (idx_pa, idx_na, idx_pd, idx_nd)
                 ],
+                "SCORES_OF_INSERTED_BASES": [] if y_alt_inserted_bases is None else [
+                    {
+                        "chrom": chrom,
+                        "pos": genomic_coord,
+                        "ref": ref_base,
+                        "alt": alt_base,
+                        "RA": f"{ref_acceptor_score:{FLOAT_FORMAT}}",
+                        "AA": f"{alt_acceptor_score:{FLOAT_FORMAT}}",
+                        "RD": f"{ref_donor_score:{FLOAT_FORMAT}}",
+                        "AD": f"{alt_donor_score:{FLOAT_FORMAT}}",
+                    } for i, (genomic_coord, ref_base, alt_base, ref_acceptor_score, alt_acceptor_score, ref_donor_score, alt_donor_score) in enumerate(zip(
+                        inserted_bases_genomic_coords, ref_seq, alt_seq, y_ref_inserted_bases[0, :, 1], y_alt_inserted_bases[0, :, 1], y_ref_inserted_bases[0, :, 2], y_alt_inserted_bases[0, :, 2]))
+                ],
             })
-
-    #print(f"Done computing scores. Hit cache for {total_count - model_prediction_count:,d} out of {total_count:,d} transcripts")
 
     return scores
 
