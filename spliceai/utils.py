@@ -337,7 +337,7 @@ def get_delta_scores(record, ann, dist_var, mask):
                     ) if any(score >= MIN_SCORE_THRESHOLD for score in (ref_acceptor_score, alt_acceptor_score, ref_donor_score, ref_acceptor_score))
                          or i in (idx_pa, idx_na, idx_pd, idx_nd)
                 ],
-                "SCORES_OF_INSERTED_BASES": [] if y_alt_inserted_bases is None else [
+                "SCORES_FOR_INSERTED_BASES": [] if y_alt_inserted_bases is None else [
                     {
                         "chrom": chrom,
                         "pos": genomic_coord,
@@ -352,15 +352,15 @@ def get_delta_scores(record, ann, dist_var, mask):
                 ],
             })
 
-            # print SCORES_OF_INSERTED_BASES
-            #if scores[-1]["SCORES_OF_INSERTED_BASES"]:
+            # print SCORES_FOR_INSERTED_BASES
+            #if scores[-1]["SCORES_FOR_INSERTED_BASES"]:
             #    from pprint import pprint
             #    import pandas as pd
             #    import tabulate
             #    print("="*100)
             #    print(f"Variant: {record.chrom}-{record.pos}-{record.ref}-{record.alts[j]}, strand: {strands[i]}")
-            #    pprint("-".join([scores[-1]["SCORES_OF_INSERTED_BASES"][0][key] for key in ("chrom", "pos", "ref", "alt")]))
-            #    print(tabulate.tabulate(pd.DataFrame(scores[-1]["SCORES_OF_INSERTED_BASES"]), headers="keys", tablefmt="pretty"))
+            #    pprint("-".join([scores[-1]["SCORES_FOR_INSERTED_BASES"][0][key] for key in ("chrom", "pos", "ref", "alt")]))
+            #    print(tabulate.tabulate(pd.DataFrame(scores[-1]["SCORES_FOR_INSERTED_BASES"]), headers="keys", tablefmt="pretty"))
 
     return scores
 
