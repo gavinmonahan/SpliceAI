@@ -137,6 +137,7 @@ def get_delta_scores_for_transcript(x_ref, x_alt, ref_len, alt_len, strand, cov,
         y_ref = y_ref[:, ::-1]
         y_alt = y_alt[:, ::-1]
 
+    y_alt_with_inserted_bases = None
     if ref_len > 1 and alt_len == 1:
         y_alt = np.concatenate([
             y_alt[:, :cov//2+alt_len],
@@ -144,6 +145,7 @@ def get_delta_scores_for_transcript(x_ref, x_alt, ref_len, alt_len, strand, cov,
             y_alt[:, cov//2+alt_len:]],
             axis=1)
     elif ref_len == 1 and alt_len > 1:
+        y_alt_with_inserted_bases = y_alt  # save the original scores for inserted bases
         y_alt = np.concatenate([
             y_alt[:, :cov//2],
             np.max(y_alt[:, cov//2:cov//2+alt_len], axis=1)[:, None, :],
@@ -160,23 +162,7 @@ def get_delta_scores_for_transcript(x_ref, x_alt, ref_len, alt_len, strand, cov,
             y_alt[:, cov//2+alt_len:]],
             axis=1)
 
-    return y_ref, y_alt
-
-
-def compute_scores_for_inserted_bases(y_ref, y_alt, alt_len, cov):
-    # if the variant is an insertion, this array will contain the raw sores for the inserted bases.
-    # this is used for addressing https://github.com/broadinstitute/SpliceAI-lookup/issues/84
-    y_ref_inserted_bases = np.concatenate([
-        y_ref[:, 1 + cov//2 - INSERTED_BASES_CONTEXT : 1 + cov//2],
-        np.zeros((1, alt_len - 1, 3)),
-        y_ref[:, 1 + cov//2 : 1 + cov//2 + INSERTED_BASES_CONTEXT],
-    ], axis=1)
-
-    y_alt_inserted_bases = y_alt[:, 1 + cov//2 - INSERTED_BASES_CONTEXT: 1 + cov//2 + (alt_len - 1) + INSERTED_BASES_CONTEXT]
-
-    assert y_ref_inserted_bases.shape == y_alt_inserted_bases.shape
-
-    return y_ref_inserted_bases, y_alt_inserted_bases
+    return y_ref, y_alt, y_alt_with_inserted_bases
 
 
 def get_delta_scores(record, ann, dist_var, mask):
@@ -245,7 +231,7 @@ def get_delta_scores(record, ann, dist_var, mask):
                 model_prediction_count += 1
                 delta_scores_transcript_cache[args] = get_delta_scores_for_transcript(*args, ann=ann)
 
-            y_ref, y_alt = delta_scores_transcript_cache[args]
+            y_ref, y_alt, y_alt_with_inserted_bases = delta_scores_transcript_cache[args]
 
             y = np.concatenate([y_ref, y_alt])
 
@@ -277,6 +263,9 @@ def get_delta_scores(record, ann, dist_var, mask):
             DP_DG =  int(idx_pd-cov//2)
             DP_DL =  int(idx_nd-cov//2)
 
+            # if the variant is an insertion and the model predicts a change in splicing within the inserted bases,
+            # retrieve scores for each inserted base to address https://github.com/broadinstitute/SpliceAI-lookup/issues/84
+
             if ref_len == 1 and alt_len >= 3 and (
                 (DS_AG >= 0.2 and DP_AG == 0) or
                 (DS_AL >= 0.2 and DP_AL == 0) or
@@ -289,8 +278,16 @@ def get_delta_scores(record, ann, dist_var, mask):
                     np.arange(record.pos + 1, record.pos + INSERTED_BASES_CONTEXT + 1),
                 ])
 
-                y_ref_inserted_bases, y_alt_inserted_bases = compute_scores_for_inserted_bases(
-                    y_ref, y_alt, alt_len, cov)
+                y_ref_inserted_bases = np.concatenate([
+                    y_ref[:, 1 + cov//2 - INSERTED_BASES_CONTEXT : 1 + cov//2],
+                    np.zeros((1, alt_len - 1, 3)),
+                    y_ref[:, 1 + cov//2 : 1 + cov//2 + INSERTED_BASES_CONTEXT],
+                ], axis=1)
+
+                y_alt_inserted_bases = y_alt_with_inserted_bases[
+                    :, 1 + cov//2 - INSERTED_BASES_CONTEXT: 1 + cov//2 + (alt_len - 1) + INSERTED_BASES_CONTEXT]
+
+                assert y_ref_inserted_bases.shape == y_alt_inserted_bases.shape
 
                 ref_seq = (
                     seq[wid//2 - INSERTED_BASES_CONTEXT + 1: wid//2 + 1] +
@@ -298,7 +295,7 @@ def get_delta_scores(record, ann, dist_var, mask):
                     seq[wid//2 + 1 : wid//2 + 1 + INSERTED_BASES_CONTEXT]
                 )
                 alt_seq = (
-                    seq[wid//2 - INSERTED_BASES_CONTEXT : wid//2] +
+                    seq[wid//2 - INSERTED_BASES_CONTEXT + 1: wid//2 + 1] +
                     record.alts[j][1:] +
                     seq[wid//2 + len(record.ref) : wid//2 + len(record.ref) + INSERTED_BASES_CONTEXT]
                 )
@@ -354,6 +351,16 @@ def get_delta_scores(record, ann, dist_var, mask):
                         inserted_bases_genomic_coords, ref_seq, alt_seq, y_ref_inserted_bases[0, :, 1], y_alt_inserted_bases[0, :, 1], y_ref_inserted_bases[0, :, 2], y_alt_inserted_bases[0, :, 2]))
                 ],
             })
+
+            # print SCORES_OF_INSERTED_BASES
+            #if scores[-1]["SCORES_OF_INSERTED_BASES"]:
+            #    from pprint import pprint
+            #    import pandas as pd
+            #    import tabulate
+            #    print("="*100)
+            #    print(f"Variant: {record.chrom}-{record.pos}-{record.ref}-{record.alts[j]}, strand: {strands[i]}")
+            #    pprint("-".join([scores[-1]["SCORES_OF_INSERTED_BASES"][0][key] for key in ("chrom", "pos", "ref", "alt")]))
+            #    print(tabulate.tabulate(pd.DataFrame(scores[-1]["SCORES_OF_INSERTED_BASES"]), headers="keys", tablefmt="pretty"))
 
     return scores
 
