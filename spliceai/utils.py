@@ -266,11 +266,11 @@ def get_delta_scores(record, ann, dist_var, mask):
             # if the variant is an insertion and the model predicts a change in splicing within the inserted bases,
             # retrieve scores for each inserted base to address https://github.com/broadinstitute/SpliceAI-lookup/issues/84
 
-            if ref_len == 1 and alt_len >= 3 and (
-                (DS_AG >= 0.2 and DP_AG == 0) or
-                (DS_AL >= 0.2 and DP_AL == 0) or
-                (DS_DG >= 0.2 and DP_DG == 0) or
-                (DS_DL >= 0.2 and DP_DL == 0)):
+            if ref_len == 1 and alt_len > 1 and (
+                (DS_AG >= 0.01 and DP_AG == 0) or
+                (DS_AL >= 0.01 and DP_AL == 0) or
+                (DS_DG >= 0.01 and DP_DG == 0) or
+                (DS_DL >= 0.01 and DP_DL == 0)):
 
                 inserted_bases_genomic_coords = np.concatenate([
                     np.arange(record.pos - INSERTED_BASES_CONTEXT + 1, record.pos + 1),
