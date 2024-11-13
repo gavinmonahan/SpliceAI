@@ -266,11 +266,7 @@ def get_delta_scores(record, ann, dist_var, mask):
             # if the variant is an insertion and the model predicts a change in splicing within the inserted bases,
             # retrieve scores for each inserted base to address https://github.com/broadinstitute/SpliceAI-lookup/issues/84
 
-            if ref_len == 1 and alt_len > 1 and (
-                (DS_AG >= 0.01 and DP_AG == 0) or
-                (DS_AL >= 0.01 and DP_AL == 0) or
-                (DS_DG >= 0.01 and DP_DG == 0) or
-                (DS_DL >= 0.01 and DP_DL == 0)):
+            if ref_len == 1 and alt_len > 1 and ((DS_AG >= 0.01 and DP_AG == 0) or (DS_DG >= 0.01 and DP_DG == 0)):
 
                 inserted_bases_genomic_coords = np.concatenate([
                     np.arange(record.pos - INSERTED_BASES_CONTEXT + 1, record.pos + 1),
@@ -343,10 +339,10 @@ def get_delta_scores(record, ann, dist_var, mask):
                         "pos": genomic_coord,
                         "ref": ref_base,
                         "alt": alt_base,
-                        "RA": f"{ref_acceptor_score:{FLOAT_FORMAT}}",
-                        "AA": f"{alt_acceptor_score:{FLOAT_FORMAT}}",
-                        "RD": f"{ref_donor_score:{FLOAT_FORMAT}}",
-                        "AD": f"{alt_donor_score:{FLOAT_FORMAT}}",
+                        "RA": f"{ref_acceptor_score:{FLOAT_FORMAT}}",  # REF acceptor score
+                        "RD": f"{ref_donor_score:{FLOAT_FORMAT}}",     # REF donor score
+                        "AA": f"{alt_acceptor_score:{FLOAT_FORMAT}}",  # ALT acceptor score
+                        "AD": f"{alt_donor_score:{FLOAT_FORMAT}}",     # ALT donor score
                     } for i, (genomic_coord, ref_base, alt_base, ref_acceptor_score, alt_acceptor_score, ref_donor_score, alt_donor_score) in enumerate(zip(
                         inserted_bases_genomic_coords, ref_seq, alt_seq, y_ref_inserted_bases[0, :, 1], y_alt_inserted_bases[0, :, 1], y_ref_inserted_bases[0, :, 2], y_alt_inserted_bases[0, :, 2]))
                 ],
