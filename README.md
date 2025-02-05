@@ -5,6 +5,13 @@
 
 This package annotates genetic variants with their predicted effect on splicing, as described in [Jaganathan *et al*, Cell 2019 in press](https://doi.org/10.1016/j.cell.2018.12.015). The annotations for all possible substitutions, 1 base insertions, and 1-4 base deletions within genes are available [here](https://basespace.illumina.com/s/otSPW8hnhaZR) for download. These annotations are free for academic and not-for-profit use; other use requires a commercial license from Illumina, Inc.
 
+## Notes
+This repo is a fork of bw2/SpliceAI and adds in T2T-chm13 annotation files in spliceai/annotation
+The annotation file was built from the UCSC [catLiftOffGenesV1.bb](https://hgdownload.soe.ucsc.edu/gbdb/hs1/catLiftOffGenesV1/) (gencode 35 version) file, and converted to bed format using UCSC bigBedToBed.
+There is a unfiltered file which has two extra columns: type (for gene biotype) and CAT_class (for Comparitive Annotation Toolkit class)
+And there are two analysis-ready files, one with all transcripts and one with just protein coding transcripts. 
+
+
 ### License
 SpliceAI source code is provided under the [GPLv3 license](LICENSE). SpliceAI includes several third party packages provided under other open source licenses, please see [NOTICE](NOTICE) for additional details. The trained models used by SpliceAI (located in this package at spliceai/models) are provided under the [CC BY NC 4.0](LICENSE) license for academic and non-commercial use; other use requires a commercial license from Illumina, Inc.
 
