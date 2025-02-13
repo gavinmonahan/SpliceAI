@@ -1,9 +1,11 @@
 ## Instructions to setup tensorflow-gpu on Setonix
 
-Following (this guide)[https://pawsey.atlassian.net/wiki/spaces/US/pages/51924596/Running+TensorFlow+on+Setonix#RunningTensorFlowonSetonix-InstallingadditionalPythonpackages]
+Following [this guide](https://pawsey.atlassian.net/wiki/spaces/US/pages/51924596/Running+TensorFlow+on+Setonix#RunningTensorFlowonSetonix-InstallingadditionalPythonpackages)
 
 1. Disable conda
-`nano ~/.bashrc`
+```
+nano ~/.bashrc
+```
 2. Swap modules
 ```
 module unload gcc/12.2.0
@@ -24,4 +26,6 @@ python3 -m venv --system-site-packages spliceai2
 python3 -m pip install /software/projects/pawsey0933/gmonahan/T2T/SpliceAI/
 ```
 5. Check installation
-`/home/gmonahan/.local/bin/spliceai`
+```
+/home/gmonahan/.local/bin/spliceai
+```
